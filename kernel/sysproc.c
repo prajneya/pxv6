@@ -135,7 +135,7 @@ sys_set_priority(void)
   {
     return -1;
   }
-  if(argint(1,&priority)<0)
+  if(argint(1,&new_priority)<0)
   {
     return -1;
   }

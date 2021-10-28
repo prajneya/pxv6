@@ -501,32 +501,6 @@ update_time()
   }
 }
 
-// implementation of set_priority syscall
-int set_priority(int new_priority, int pid)
-{
-  int old_priority = -1;
-
-  //acquire process table lock
-  acquire(&ptable.lock);
-
-  //scan through process table
-  struct proc* p;
-  for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-  {
-    if (p->pid == pid)
-    {
-      //store old priority and change the priority
-      old_priority = p->priority;
-      p->priority = new_priority;
-    }
-  }
-  //release process table lock
-  release(&ptable.lock);
-
-  //output old priority
-  return old_priority;
-}
-
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
@@ -537,7 +511,6 @@ int set_priority(int new_priority, int pid)
 void
 scheduler(void)
 {
-  struct proc *p;
   struct cpu *c = mycpu();
   
   c->proc = 0;
@@ -545,96 +518,90 @@ scheduler(void)
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
 
-    #ifdef FCFS
-      //FCFS scheduling
-      // Loop over process table looking for process to run.
-      acquire(&ptable.lock);
+    // #ifdef FCFS
+    //   //FCFS scheduling
+      
+    //   struct proc *p;
+    //   struct proc *first_process = 0;
 
-      struct proc *first_process = 0;
+    //   // Loop over process table looking for process to run.
+    //   for(p = proc; p < &proc[NPROC]; p++){
+    //     acquire(&p->lock);
+    //     if (p->state != RUNNABLE)
+    //       continue;
 
-      for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-      {
-        if (p->state != RUNNABLE)
-          continue;
+    //     if (!first_process)
+    //     {
+    //       first_process = p;
+    //     }
+    //     else
+    //     {
+    //       if (p->ctime < first_process->ctime)
+    //       {
+    //         first_process = p;
+    //       }
+    //     }
+    //     release(&p->lock);
+    //   }
+    //   if (first_process){
+    //     p = first_process;
+    //     // Switch to chosen process.  It is the process's job
+    //       // to release its lock and then reacquire it
+    //       // before jumping back to us.
+    //       p->state = RUNNING;
+    //       c->proc = p;
+    //       swtch(&c->context, &p->context);
 
-        if (!first_process)
-        {
-          first_process = p;
-        }
-        else
-        {
-          if (p->ctime < first_process->ctime)
-          {
-            first_process = p;
-          }
-        }
-      }
-      if (first_process){
-        p = first_process;
-        // Switch to chosen process.  It is the process's job
-        // to release ptable.lock and then reacquire it
-        // before jumping back to us.
-        c->proc = p;
-        switchuvm(p);
-        p->state = RUNNING;
+    //       // Process is done running for now.
+    //       // It should have changed its p->state before coming back.
+    //       c->proc = 0;
+    //   }
+    // #endif
 
-        swtch(&(c->scheduler), p->context);
-        switchkvm();
+    // #ifdef PBS
+    //     //Priority based scheduling
+        
+    //     struct proc *p;
+    //     struct proc *highest_priority_process = 0;
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-      }
-      release(&ptable.lock);
+    //     // Loop over process table looking for process to run.
+    //     for(p = proc; p < &proc[NPROC]; p++){
+    //       acquire(&p->lock);
+    //       if (p->state != RUNNABLE)
+    //         continue;
 
-    #endif
+    //       if (!highest_priority_process)
+    //       {
+    //         highest_priority_process = p;
+    //       }
+    //       else
+    //       {
+    //         if (p->priority < highest_priority_process->priority)
+    //         {
+    //           highest_priority_process = p;
+    //         }
+    //       }
+    //       release(&p->lock);
+    //     }
+    //     if (highest_priority_process)
+    //     {
+    //       p = highest_priority_process;
+    //       // Switch to chosen process.  It is the process's job
+    //       // to release its lock and then reacquire it
+    //       // before jumping back to us.
+    //       p->state = RUNNING;
+    //       c->proc = p;
+    //       swtch(&c->context, &p->context);
 
-    #ifdef PBS
-        //Priority based scheduling
-        // Loop over process table looking for process to run.
-        acquire(&ptable.lock);
-
-        struct proc *highest_priority_process = 0;
-
-        for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-        {
-          if (p->state != RUNNABLE)
-            continue;
-
-          if (!highest_priority_process)
-          {
-            highest_priority_process = p;
-          }
-          else
-          {
-            if (p->priority < highest_priority_process->priority)
-            {
-              highest_priority_process = p;
-            }
-          }
-        }
-        if (highest_priority_process)
-        {
-          p = highest_priority_process;
-          // Switch to chosen process.  It is the process's job
-          // to release ptable.lock and then reacquire it
-          // before jumping back to us.
-          c->proc = p;
-          switchuvm(p);
-          p->state = RUNNING;
-
-          swtch(&(c->scheduler), p->context);
-          switchkvm();
-
-          // Process is done running for now.
-          // It should have changed its p->state before coming back.
-          c->proc = 0;
-        }
-        release(&ptable.lock);
-
-    #endif
+    //       // Process is done running for now.
+    //       // It should have changed its p->state before coming back.
+    //       c->proc = 0;
+    //     }
+    // #endif
 
     #ifdef RROBIN
+
+      struct proc *p;  
 
       for(p = proc; p < &proc[NPROC]; p++) {
         acquire(&p->lock);
@@ -652,11 +619,36 @@ scheduler(void)
         }
         release(&p->lock);
       }
-
     #endif
 
     }
 
+}
+
+// implementation of set_priority syscall
+int 
+set_priority(int new_priority, int pid)
+{
+  int old_priority = -1;
+
+  //scan through process table
+  struct proc* p;
+
+  // Loop over process table looking for process to run.
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if (p->pid == pid)
+    {
+      //store old priority and change the priority
+      old_priority = p->priority;
+      p->priority = new_priority;
+    }
+    release(&p->lock);
+  }
+  
+
+  //output old priority
+  return old_priority;
 }
 
 // Switch to scheduler.  Must hold only p->lock
