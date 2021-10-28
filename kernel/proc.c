@@ -119,6 +119,7 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  p->nrun = 0;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -518,86 +519,114 @@ scheduler(void)
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
 
-    // #ifdef FCFS
-    //   //FCFS scheduling
+    #ifdef FCFS
+      //FCFS scheduling
       
-    //   struct proc *p;
-    //   struct proc *first_process = 0;
+      struct proc *p;
+      struct proc *first_process = 0;
 
-    //   // Loop over process table looking for process to run.
-    //   for(p = proc; p < &proc[NPROC]; p++){
-    //     acquire(&p->lock);
-    //     if (p->state != RUNNABLE)
-    //       continue;
+      // Loop over process table looking for process to run.
+      for(p = proc; p < &proc[NPROC]; p++){
+        acquire(&p->lock);
+        if (p->state != RUNNABLE)
+          continue;
 
-    //     if (!first_process)
-    //     {
-    //       first_process = p;
-    //     }
-    //     else
-    //     {
-    //       if (p->ctime < first_process->ctime)
-    //       {
-    //         first_process = p;
-    //       }
-    //     }
-    //     release(&p->lock);
-    //   }
-    //   if (first_process){
-    //     p = first_process;
-    //     // Switch to chosen process.  It is the process's job
-    //       // to release its lock and then reacquire it
-    //       // before jumping back to us.
-    //       p->state = RUNNING;
-    //       c->proc = p;
-    //       swtch(&c->context, &p->context);
+        if (!first_process)
+        {
+          first_process = p;
+        }
+        else
+        {
+          if (p->ctime < first_process->ctime)
+          {
+            first_process = p;
+          }
+        }
+        release(&p->lock);
+      }
+      if (first_process){
+        p = first_process;
+        // Switch to chosen process.  It is the process's job
+          // to release its lock and then reacquire it
+          // before jumping back to us.
+          p->state = RUNNING;
+          c->proc = p;
+          p->nrun++;
+          swtch(&c->context, &p->context);
 
-    //       // Process is done running for now.
-    //       // It should have changed its p->state before coming back.
-    //       c->proc = 0;
-    //   }
-    // #endif
+          // Process is done running for now.
+          // It should have changed its p->state before coming back.
+          c->proc = 0;
+      }
+    #endif
 
-    // #ifdef PBS
-    //     //Priority based scheduling
+    #ifdef PBS
+        //Priority based scheduling
         
-    //     struct proc *p;
-    //     struct proc *highest_priority_process = 0;
+        struct proc *p;
+        struct proc *highest_priority_process = 0;
+        int highest_priority = 0;
 
-    //     // Loop over process table looking for process to run.
-    //     for(p = proc; p < &proc[NPROC]; p++){
-    //       acquire(&p->lock);
-    //       if (p->state != RUNNABLE)
-    //         continue;
+        // Loop over process table looking for process to run.
+        for(p = proc; p < &proc[NPROC]; p++){
+          acquire(&p->lock);
 
-    //       if (!highest_priority_process)
-    //       {
-    //         highest_priority_process = p;
-    //       }
-    //       else
-    //       {
-    //         if (p->priority < highest_priority_process->priority)
-    //         {
-    //           highest_priority_process = p;
-    //         }
-    //       }
-    //       release(&p->lock);
-    //     }
-    //     if (highest_priority_process)
-    //     {
-    //       p = highest_priority_process;
-    //       // Switch to chosen process.  It is the process's job
-    //       // to release its lock and then reacquire it
-    //       // before jumping back to us.
-    //       p->state = RUNNING;
-    //       c->proc = p;
-    //       swtch(&c->context, &p->context);
+          int sleep_time = p->etime - p->ctime - p->rtime;
+          if(sleep_time<0){
+            sleep_time = 0;
+          }
+          
+          int denom = p->etime - p->ctime;
 
-    //       // Process is done running for now.
-    //       // It should have changed its p->state before coming back.
-    //       c->proc = 0;
-    //     }
-    // #endif
+          int niceness = 0;
+
+          if(denom<=0){
+            niceness = 5;
+          }
+          else{
+            niceness = (sleep_time/denom)*10;
+          }
+
+          int dynamic_priority = (p->priority-niceness+5) > 100 ? 100: (p->priority-niceness+5);
+
+          if(dynamic_priority<=0){
+            dynamic_priority = 0;
+          }
+
+          if (p->state != RUNNABLE)
+            continue;
+
+          if (!highest_priority_process)
+          {
+            highest_priority_process = p;
+            highest_priority = dynamic_priority;
+          }
+          else
+          {
+            if (dynamic_priority < highest_priority)
+            {
+              highest_priority_process = p;
+              highest_priority = dynamic_priority;
+            }
+          }
+          release(&p->lock);
+        }
+        if (highest_priority_process)
+        {
+          p = highest_priority_process;
+          // Switch to chosen process.  It is the process's job
+          // to release its lock and then reacquire it
+          // before jumping back to us.
+          p->state = RUNNING;
+          c->proc = p;
+          p->nrun++;
+          swtch(&c->context, &p->context);
+
+          // Process is done running for now.
+          // It should have changed its p->state before coming back.
+          c->proc = 0;
+        }
+    #endif
 
     #ifdef RROBIN
 
@@ -611,6 +640,7 @@ scheduler(void)
           // before jumping back to us.
           p->state = RUNNING;
           c->proc = p;
+          p->nrun++;
           swtch(&c->context, &p->context);
 
           // Process is done running for now.
@@ -821,15 +851,17 @@ procdump(void)
 {
   static char *states[] = {
   [UNUSED]    "unused",
-  [SLEEPING]  "sleep ",
+  [SLEEPING]  "sleeping ",
   [RUNNABLE]  "runble",
-  [RUNNING]   "run   ",
+  [RUNNING]   "running   ",
   [ZOMBIE]    "zombie"
   };
   struct proc *p;
   char *state;
 
   printf("\n");
+  // printf("PID  Priority  State  Name      r_time  w_time  n_run  cur_q  q0   q1   q2   q3   q4\n");
+  printf("PID\tPriority\tState\t\tName\t\tr_time\tw_time\tn_run\n");
   for(p = proc; p < &proc[NPROC]; p++){
     if(p->state == UNUSED)
       continue;
@@ -837,7 +869,8 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
-    printf("%d %s %s", p->pid, state, p->name);
+    printf("%d\t%d\t\t%s\t%s\t\t%d\t%d\t%d\n", p->pid, p->priority, state, p->name, p->rtime, p->etime - p->ctime - p->rtime, p->nrun);
     printf("\n");
   }
 }
+  

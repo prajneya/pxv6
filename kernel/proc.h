@@ -112,5 +112,6 @@ struct proc {
   uint ctime;                  // When was the process created
   uint etime;                  // When did the process exit 
 
-  int priority;                // Priority of process
+  int priority;                // Static priority of process
+  int nrun;                    // Number of times process is run
 };
