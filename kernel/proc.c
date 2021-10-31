@@ -640,6 +640,16 @@ scheduler(void)
               highest_priority_process = p;
               highest_priority = dynamic_priority;
             }
+            else if (dynamic_priority == highest_priority){
+              if(p->nrun > highest_priority_process->nrun){
+                highest_priority_process = p;
+              }
+              else if(p->nrun > highest_priority_process->nrun){
+                if(p->ctime < highest_priority_process->ctime){
+                  highest_priority_process = p;
+                }
+              }
+            }
           }
           release(&p->lock);
         }
@@ -1003,7 +1013,7 @@ procdump(void)
     }
   #else
     #ifdef PBS
-    printf("PID\tPriority\tState\t\tName\t\tr_time\tw_time\tn_run\n");
+    printf("PID\tPriority\tState\t\tr_time\tw_time\tn_run\n");
     for(p = proc; p < &proc[NPROC]; p++){
       if(p->state == UNUSED)
         continue;
@@ -1014,7 +1024,7 @@ procdump(void)
       int w_time = p->etime - p->ctime - p->rtime;
       if(w_time < 0)
         w_time = 0;
-      printf("%d\t%d\t\t%s\t%s\t\t%d\t%d\t%d\n", p->pid, p->priority, state, p->name, p->rtime, w_time, p->nrun);
+      printf("%d\t%d\t\t%s\t%d\t%d\t%d\n", p->pid, p->priority, state, p->rtime, w_time, p->nrun);
       printf("\n");
     }
     #else

@@ -42,7 +42,7 @@ for(p = proc; p < &proc[NPROC]; p++){
 	  }
 	}
 	release(&p->lock);
-	}
+}
 ``` 
 
 2. We run the process:
@@ -58,7 +58,107 @@ for(p = proc; p < &proc[NPROC]; p++){
       c->proc = 0;
     }
     release(&p->lock);
+}
+```
+
+### PBS Scheduler
+
+A non-preemptive priority-based scheduler that selects the process with the highest priority for execution. In case two or more processes have the same priority, we use the number of times the process has been scheduled to break the tie. If the tie remains, use the start-time of the process to break the tie.
+
+The priority is calculated based upon two types: A static Priority, which is stored in the ```struct proc``` and a dynamic priority which is calculated based on the static priority and niceness (a factor depending upon the running and waiting times of the process).
+
+1. We implement the ```set_priority``` function as follows:
+
+```c
+int 
+set_priority(int new_priority, int pid)
+{
+  int old_priority = -1;
+  struct proc* p;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if (p->pid == pid)
+    {
+      old_priority = p->priority;
+      p->priority = new_priority;
+    }
+    release(&p->lock);
   }
+
+  return old_priority;
+}
+```
+
+2. We iterate the process table as shown ealier and first calculate dynamic priority and calculate ties to find process to run:
+
+```c
+  int sleep_time = p->etime - p->ctime - p->rtime;
+  if(sleep_time<0){
+    sleep_time = 0;
+  }
+  
+  int denom = p->etime - p->ctime;
+
+  int niceness = 0;
+
+  if(denom<=0){
+    niceness = 5;
+  }
+  else{
+    niceness = (sleep_time/denom)*10;
+  }
+
+  int dynamic_priority = (p->priority - niceness + 5) > 100 ? 100: (p->priority-niceness + 5);
+
+  if(dynamic_priority<=0){
+    dynamic_priority = 0;
+  }
+
+  if (p->state != RUNNABLE){
+    release(&p->lock);
+    continue;
+  }
+
+  if (!highest_priority_process)
+  {
+    highest_priority_process = p;
+    highest_priority = dynamic_priority;
+  }
+  else
+  {
+    if (dynamic_priority < highest_priority)
+    {
+      highest_priority_process = p;
+      highest_priority = dynamic_priority;
+    }
+    else if (dynamic_priority == highest_priority){
+      if(p->nrun > highest_priority_process->nrun){
+        highest_priority_process = p;
+      }
+      else if(p->nrun > highest_priority_process->nrun){
+        if(p->ctime < highest_priority_process->ctime){
+          highest_priority_process = p;
+        }
+      }
+    }
+  }
+```
+
+3. We run the process:
+
+```c
+for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if (p->state == RUNNABLE && p==first_process){
+      p->state = RUNNING;
+      c->proc = p;
+      p->nrun++;
+      swtch(&c->context, &p->context);
+      c->proc = 0;
+    }
+    release(&p->lock);
+}
 ```
 
 ## Specification 3: Procdump
