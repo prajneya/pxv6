@@ -1,3 +1,72 @@
+# pxv6: Prajneya's xv6
+
+## Introduction
+This is a modification of the xv6 riscv operating system in which the following features have been implemented:
+- `trace` system call
+- `strace` user program
+- `set_priority` system call
+- FCFS CPU scheduler
+- PBS CPU scheduler
+- MLFQ CPU scheduler
+- Customized Procdump for PBS and MLFQ
+
+## Specification 1: strace
+
+## Specification 2: Schedulers
+
+### FCFS Scheduler
+
+A policy that selects the process with the lowest creation time.
+
+With the usage of ```ticks``` we store the ```ctime``` (creation time) of process by modifying the ```struct proc```. We then implement the policy as follows:
+
+1. We find the process with least creation time:
+
+```c
+for(p = proc; p < &proc[NPROC]; p++){
+	acquire(&p->lock);
+	if (p->state != RUNNABLE){
+	  release(&p->lock);
+	  continue;
+	}
+
+	if (!first_process)
+	{
+	  first_process = p;
+	}
+	else
+	{
+	  if (p->ctime < first_process->ctime)
+	  {
+	    first_process = p;
+	  }
+	}
+	release(&p->lock);
+	}
+``` 
+
+2. We run the process:
+
+```c
+for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if (p->state == RUNNABLE && p==first_process){
+      p->state = RUNNING;
+      c->proc = p;
+      p->nrun++;
+      swtch(&c->context, &p->context);
+      c->proc = 0;
+    }
+    release(&p->lock);
+  }
+```
+
+## Specification 3: Procdump
+
+-------------------------------------------------------------------------
+
+ORIGINAL README:
+
 xv6 is a re-implementation of Dennis Ritchie's and Ken Thompson's Unix
 Version 6 (v6).  xv6 loosely follows the structure and style of v6,
 but is implemented for a modern RISC-V multiprocessor using ANSI C.

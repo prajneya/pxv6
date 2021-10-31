@@ -114,4 +114,10 @@ struct proc {
 
   int priority;                // Static priority of process
   int nrun;                    // Number of times process is run
+
+  int queue;                  // Current queue of the process
+  int ticks_in_current_slice; // Ticks in current time slice
+  int ticks[5];               // Number of ticks received at each of the five queues
+  int last_executed;          // Last execution time
+
 };

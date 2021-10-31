@@ -20,6 +20,12 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+//Queues for MLFQ
+struct proc *queues[5][NPROC];
+// Note that values will initially automatically be 0
+int count_in_queues[5];
+int max_ticks_in_queue[5] = {1, 2, 4, 8, 16};
+
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
 // memory model when using p->parent.
@@ -147,6 +153,22 @@ found:
 
   //Set default priority of process
   p->priority = 60;
+
+#ifdef MLFQ
+  //Add process to queue 0 of MLFQ
+  queues[0][count_in_queues[0]] = p;
+  count_in_queues[0]++;
+
+  p->queue = 0;
+  p->ticks_in_current_slice = 0;
+
+  p->nrun = 0;
+  for (int i = 0; i < 5; i++)
+  {
+    p->ticks[i] = 0;
+  }
+
+#endif
 
   return p;
 }
@@ -528,8 +550,11 @@ scheduler(void)
       // Loop over process table looking for process to run.
       for(p = proc; p < &proc[NPROC]; p++){
         acquire(&p->lock);
-        if (p->state != RUNNABLE)
+        // printf("%s\n", p->name);
+        if (p->state != RUNNABLE){
+          release(&p->lock);
           continue;
+        }
 
         if (!first_process)
         {
@@ -544,9 +569,12 @@ scheduler(void)
         }
         release(&p->lock);
       }
-      if (first_process){
-        p = first_process;
-        // Switch to chosen process.  It is the process's job
+
+      for(p = proc; p < &proc[NPROC]; p++){
+        acquire(&p->lock);
+        // printf("%s\n", p->name);
+        if (p->state == RUNNABLE && p==first_process){
+          // Switch to chosen process.  It is the process's job
           // to release its lock and then reacquire it
           // before jumping back to us.
           p->state = RUNNING;
@@ -557,7 +585,10 @@ scheduler(void)
           // Process is done running for now.
           // It should have changed its p->state before coming back.
           c->proc = 0;
+        }
+        release(&p->lock);
       }
+
     #endif
 
     #ifdef PBS
@@ -570,7 +601,6 @@ scheduler(void)
         // Loop over process table looking for process to run.
         for(p = proc; p < &proc[NPROC]; p++){
           acquire(&p->lock);
-
           int sleep_time = p->etime - p->ctime - p->rtime;
           if(sleep_time<0){
             sleep_time = 0;
@@ -587,14 +617,16 @@ scheduler(void)
             niceness = (sleep_time/denom)*10;
           }
 
-          int dynamic_priority = (p->priority-niceness+5) > 100 ? 100: (p->priority-niceness+5);
+          int dynamic_priority = (p->priority - niceness + 5) > 100 ? 100: (p->priority-niceness + 5);
 
           if(dynamic_priority<=0){
             dynamic_priority = 0;
           }
 
-          if (p->state != RUNNABLE)
+          if (p->state != RUNNABLE){
+            release(&p->lock);
             continue;
+          }
 
           if (!highest_priority_process)
           {
@@ -611,21 +643,114 @@ scheduler(void)
           }
           release(&p->lock);
         }
-        if (highest_priority_process)
-        {
-          p = highest_priority_process;
-          // Switch to chosen process.  It is the process's job
-          // to release its lock and then reacquire it
-          // before jumping back to us.
-          p->state = RUNNING;
-          c->proc = p;
-          p->nrun++;
-          swtch(&c->context, &p->context);
 
-          // Process is done running for now.
-          // It should have changed its p->state before coming back.
-          c->proc = 0;
+        for(p = proc; p < &proc[NPROC]; p++){
+          acquire(&p->lock);
+          if(p->state == RUNNABLE && p==highest_priority_process){
+            // Switch to chosen process.  It is the process's job
+            // to release its lock and then reacquire it
+            // before jumping back to us.
+            p->state = RUNNING;
+            c->proc = p;
+            p->nrun++;
+            swtch(&c->context, &p->context);
+
+            // Process is done running for now.
+            // It should have changed its p->state before coming back.
+            c->proc = 0;
+          }
+          release(&p->lock);
         }
+    #endif
+
+    #ifdef MLFQ
+    // Multilevel feedback queue scheduling
+
+        struct proc *p;
+
+        //See which processes have expired their time slices
+        for (p = proc; p < &proc[NPROC]; p++)
+        {
+          acquire(&p->lock);
+          if (p->state != RUNNABLE){
+            release(&p->lock);
+            continue;
+          }
+          if (p->ticks_in_current_slice >= max_ticks_in_queue[p->queue])
+          {
+            if (p->queue != 4)
+            {
+              //demote priority
+              p->queue++;
+              p->ticks_in_current_slice = 0;
+            }
+          }
+          release(&p->lock);
+        }
+
+        //implements aging
+        //promote processes with longer wait times
+        for (p = proc; p < &proc[NPROC]; p++)
+        {
+          acquire(&p->lock);
+          if (p->state != RUNNABLE){
+            release(&p->lock);
+            continue;
+          }
+          // if waiting too long
+          if(ticks - p->last_executed > 1000)
+          {
+            if(p->queue!=0)
+            {
+              p->queue--;
+              p->ticks_in_current_slice = 0;
+            }
+
+          }
+          release(&p->lock);
+        }
+
+        struct proc *process_to_run = 0;
+        // Run processes in order of priority
+        for (int priority = 0; priority < 5; priority++)
+        {
+          for (p = proc; p < &proc[NPROC]; p++)
+          {
+            acquire(&p->lock);
+            if (p->state != RUNNABLE){
+              release(&p->lock);
+              continue;
+            }
+            if (p->queue == priority)
+            {
+              process_to_run = p;
+              release(&p->lock);
+              goto run_proc;
+            }
+            release(&p->lock);
+          }
+        }
+      run_proc:
+        for (p = proc; p < &proc[NPROC]; p++){
+          acquire(&p->lock);
+          // If process found
+          if (p->state == RUNNABLE && p==process_to_run){
+            // Switch to chosen process.  It is the process's job
+            // to release ptable.lock and then reacquire it
+            // before jumping back to us.
+            p->nrun++;
+            c->proc = p;
+            p->state = RUNNING;
+
+            swtch(&c->context, &p->context);
+
+            // Process is done running for now.
+            // It should have changed its p->state before coming back.
+            c->proc = 0;
+          }
+          release(&p->lock);
+        }
+
     #endif
 
     #ifdef RROBIN
@@ -850,9 +975,9 @@ void
 procdump(void)
 {
   static char *states[] = {
-  [UNUSED]    "unused",
+  [UNUSED]    "unused  ",
   [SLEEPING]  "sleeping ",
-  [RUNNABLE]  "runble",
+  [RUNNABLE]  "runnable ",
   [RUNNING]   "running   ",
   [ZOMBIE]    "zombie"
   };
@@ -860,17 +985,51 @@ procdump(void)
   char *state;
 
   printf("\n");
-  // printf("PID  Priority  State  Name      r_time  w_time  n_run  cur_q  q0   q1   q2   q3   q4\n");
-  printf("PID\tPriority\tState\t\tName\t\tr_time\tw_time\tn_run\n");
-  for(p = proc; p < &proc[NPROC]; p++){
-    if(p->state == UNUSED)
-      continue;
-    if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
-      state = states[p->state];
-    else
-      state = "???";
-    printf("%d\t%d\t\t%s\t%s\t\t%d\t%d\t%d\n", p->pid, p->priority, state, p->name, p->rtime, p->etime - p->ctime - p->rtime, p->nrun);
-    printf("\n");
-  }
+
+  #ifdef MLFQ
+    printf("PID\tPriority\tState\t\tr_time\tw_time\tn_run\tq0\tq1\tq2\tq3\tq4\n");
+    for(p = proc; p < &proc[NPROC]; p++){
+      if(p->state == UNUSED)
+        continue;
+      if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+        state = states[p->state];
+      else
+        state = "???";
+      int w_time = p->etime - p->ctime - p->rtime;
+      if(w_time < 0)
+        w_time = 0;
+      printf("%d\t%d\t\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", p->pid, p->priority, state, p->rtime, w_time, p->nrun, p->ticks[0], p->ticks[1], p->ticks[2], p->ticks[3], p->ticks[4]);
+      printf("\n");
+    }
+  #else
+    #ifdef PBS
+    printf("PID\tPriority\tState\t\tName\t\tr_time\tw_time\tn_run\n");
+    for(p = proc; p < &proc[NPROC]; p++){
+      if(p->state == UNUSED)
+        continue;
+      if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+        state = states[p->state];
+      else
+        state = "???";
+      int w_time = p->etime - p->ctime - p->rtime;
+      if(w_time < 0)
+        w_time = 0;
+      printf("%d\t%d\t\t%s\t%s\t\t%d\t%d\t%d\n", p->pid, p->priority, state, p->name, p->rtime, w_time, p->nrun);
+      printf("\n");
+    }
+    #else
+    for(p = proc; p < &proc[NPROC]; p++){
+      if(p->state == UNUSED)
+        continue;
+      if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+        state = states[p->state];
+      else
+        state = "???";
+      printf("%d %s %s", p->pid, state, p->name);
+      printf("\n");
+    }
+    #endif
+  #endif
+
 }
   
