@@ -63,7 +63,7 @@ for(p = proc; p < &proc[NPROC]; p++){
 
 ### PBS Scheduler
 
-A non-preemptive priority-based scheduler that selects the process with the highest priority for execution. In case two or more processes have the same priority, we use the number of times the process has been scheduled to break the tie. If the tie remains, use the start-time of the process to break the tie.
+A non-preemptive priority-based scheduler that selects the process with the highest priority for execution. In case two or more processes have the same priority, we use the number of times the process has been scheduled to break the tie. If the tie remains, we use the start-time of the process to break the tie.
 
 The priority is calculated based upon two types: A static Priority, which is stored in the ```struct proc``` and a dynamic priority which is calculated based on the static priority and niceness (a factor depending upon the running and waiting times of the process).
 
@@ -149,16 +149,122 @@ set_priority(int new_priority, int pid)
 
 ```c
 for(p = proc; p < &proc[NPROC]; p++){
+  acquire(&p->lock);
+  if(p->state == RUNNABLE && p==highest_priority_process){
+    p->state = RUNNING;
+    c->proc = p;
+    p->nrun++;
+    swtch(&c->context, &p->context);
+    c->proc = 0;
+  }
+  release(&p->lock);
+}
+```
+
+### MLFQ Scheduler
+
+A simplified preemptive MLFQ scheduler that allows processes to move between different priority queues based on their behavior and CPU bursts.
+
+1. We create 5 queues, and their respective time slices.
+
+```c
+struct proc *queues[5][NPROC];
+int queue_iterator[5];
+int max_ticks_in_queue[5] = {1, 2, 4, 8, 16};
+```
+
+2. The above variables are by default initialised to 0, unless specified otherwise. When a process is created in ```allocproc()```, we initialise accordingly (we add process to Queue0 - highest priority):
+
+```c
+queues[0][queue_iterator[0]] = p;
+queue_iterator[0]++;
+
+p->queue = 0;
+p->ticks_in_current_slice = 0;
+
+p->nrun = 0;
+for (int i = 0; i < 5; i++){
+	p->ticks[i] = 0;
+}
+```
+
+3. Check for expiration of time slices:
+
+```c
+for (p = proc; p < &proc[NPROC]; p++){
+  acquire(&p->lock);
+  if (p->state != RUNNABLE){
+    release(&p->lock);
+    continue;
+  }
+  if (p->ticks_in_current_slice >= max_ticks_in_queue[p->queue])
+  {
+    if (p->queue != 4)
+    {
+      //demote priority
+      p->queue++;
+      p->ticks_in_current_slice = 0;
+    }
+  }
+  release(&p->lock);
+}
+```
+
+4. To promote processes with waiting times > 1000, we implement aging:
+
+```c
+for (p = proc; p < &proc[NPROC]; p++){
+  acquire(&p->lock);
+  if (p->state != RUNNABLE){
+    release(&p->lock);
+    continue;
+  }
+  // if waiting too long
+  if(ticks - p->last_executed > 1000)
+  {
+    if(p->queue!=0)
+    {
+      p->queue--;
+      p->ticks_in_current_slice = 0;
+    }
+
+  }
+  release(&p->lock);
+}
+```
+
+5. We finally run processes in order of their priority, in a round robin fashion:
+
+```c
+struct proc *process_to_run = 0;
+for (int priority = 0; priority < 5; priority++){
+  for (p = proc; p < &proc[NPROC]; p++){
     acquire(&p->lock);
-    if (p->state == RUNNABLE && p==first_process){
-      p->state = RUNNING;
-      c->proc = p;
+    if (p->state != RUNNABLE){
+      release(&p->lock);
+      continue;
+    }
+    if (p->queue == priority)
+    {
+      process_to_run = p;
+      release(&p->lock);
+      goto run_proc;
+    }
+    release(&p->lock);
+  }
+}
+run_proc:
+  for (p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if (p->state == RUNNABLE && p==process_to_run){
       p->nrun++;
+      c->proc = p;
+      p->state = RUNNING;
       swtch(&c->context, &p->context);
       c->proc = 0;
     }
     release(&p->lock);
-}
+  }
 ```
 
 ## Specification 3: Procdump

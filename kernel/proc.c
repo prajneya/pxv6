@@ -22,8 +22,7 @@ extern char trampoline[]; // trampoline.S
 
 //Queues for MLFQ
 struct proc *queues[5][NPROC];
-// Note that values will initially automatically be 0
-int count_in_queues[5];
+int queue_iterator[5];
 int max_ticks_in_queue[5] = {1, 2, 4, 8, 16};
 
 // helps ensure that wakeups of wait()ing
@@ -156,8 +155,8 @@ found:
 
 #ifdef MLFQ
   //Add process to queue 0 of MLFQ
-  queues[0][count_in_queues[0]] = p;
-  count_in_queues[0]++;
+  queues[0][queue_iterator[0]] = p;
+  queue_iterator[0]++;
 
   p->queue = 0;
   p->ticks_in_current_slice = 0;
@@ -740,26 +739,26 @@ scheduler(void)
             release(&p->lock);
           }
         }
-      run_proc:
-        for (p = proc; p < &proc[NPROC]; p++){
-          acquire(&p->lock);
-          // If process found
-          if (p->state == RUNNABLE && p==process_to_run){
-            // Switch to chosen process.  It is the process's job
-            // to release ptable.lock and then reacquire it
-            // before jumping back to us.
-            p->nrun++;
-            c->proc = p;
-            p->state = RUNNING;
+        run_proc:
+          for (p = proc; p < &proc[NPROC]; p++){
+            acquire(&p->lock);
+            // If process found
+            if (p->state == RUNNABLE && p==process_to_run){
+              // Switch to chosen process.  It is the process's job
+              // to release ptable.lock and then reacquire it
+              // before jumping back to us.
+              p->nrun++;
+              c->proc = p;
+              p->state = RUNNING;
 
-            swtch(&c->context, &p->context);
+              swtch(&c->context, &p->context);
 
-            // Process is done running for now.
-            // It should have changed its p->state before coming back.
-            c->proc = 0;
+              // Process is done running for now.
+              // It should have changed its p->state before coming back.
+              c->proc = 0;
+            }
+            release(&p->lock);
           }
-          release(&p->lock);
-        }
 
     #endif
 
