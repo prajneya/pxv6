@@ -113,6 +113,7 @@ struct proc {
   uint etime;                  // When did the process exit 
 
   int priority;                // Static priority of process
+  int d_priority;                // Dynamic priority of process
   int nrun;                    // Number of times process is run
 
   int queue;                  // Current queue of the process

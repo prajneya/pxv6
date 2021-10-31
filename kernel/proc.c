@@ -153,6 +153,31 @@ found:
   //Set default priority of process
   p->priority = 60;
 
+  int sleep_time = p->etime - p->ctime - p->rtime;
+  if(sleep_time<0){
+    sleep_time = 0;
+  }
+  
+  int denom = p->etime - p->ctime;
+
+  int niceness = 0;
+
+  if(denom<=0){
+    niceness = 5;
+  }
+  else{
+    niceness = (sleep_time/denom)*10;
+  }
+
+  int dynamic_priority = (p->priority - niceness + 5) > 100 ? 100: (p->priority-niceness + 5);
+
+  if(dynamic_priority<=0){
+    dynamic_priority = 0;
+  }
+
+  // update dynamic priority of process
+  p->d_priority = dynamic_priority;
+
 #ifdef MLFQ
   //Add process to queue 0 of MLFQ
   queues[0][queue_iterator[0]] = p;
@@ -622,6 +647,9 @@ scheduler(void)
             dynamic_priority = 0;
           }
 
+          // update dynamic priority of process
+          p->d_priority = dynamic_priority;
+
           if (p->state != RUNNABLE){
             release(&p->lock);
             continue;
@@ -1007,7 +1035,7 @@ procdump(void)
       int w_time = p->etime - p->ctime - p->rtime;
       if(w_time < 0)
         w_time = 0;
-      printf("%d\t%d\t\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", p->pid, p->priority, state, p->rtime, w_time, p->nrun, p->ticks[0], p->ticks[1], p->ticks[2], p->ticks[3], p->ticks[4]);
+      printf("%d\t%d\t\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", p->pid, p->d_priority, state, p->rtime, w_time, p->nrun, p->ticks[0], p->ticks[1], p->ticks[2], p->ticks[3], p->ticks[4]);
       printf("\n");
     }
   #else
@@ -1023,7 +1051,7 @@ procdump(void)
       int w_time = p->etime - p->ctime - p->rtime;
       if(w_time < 0)
         w_time = 0;
-      printf("%d\t%d\t\t%s\t%d\t%d\t%d\n", p->pid, p->priority, state, p->rtime, w_time, p->nrun);
+      printf("%d\t%d\t\t%s\t%d\t%d\t%d\n", p->pid, p->d_priority, state, p->rtime, w_time, p->nrun);
       printf("\n");
     }
     #else
