@@ -287,6 +287,14 @@ run_proc:
   }
 ```
 
+### Performance Comparision
+
+|Type                       | Default(RoundRobin)        | FCFS          | PBS          | MLFQ          |
+| :---:                     | :------------------------: | :-----------: | :----------: | :-----------: |
+|  Average Running Time     | 123                        | 98            | 127          | 128           |
+|  Average Waiting TIme     | 23                         | 24			 | 11           | 11            |
+
+
 ## Specification 3: Procdump
 
 Printing information about processes, specifically for PBS and MLFQ:
