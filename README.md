@@ -90,6 +90,19 @@ set_priority(int new_priority, int pid)
 }
 ```
 
+```struct proc``` is modified as follows:
+
+```c
+
+uint rtime;                  // How long the process ran for 
+uint ctime;                  // When was the process created
+uint etime;                  // When did the process exit 
+
+int priority;                // Static priority of process
+int nrun;                    // Number of times process is run
+
+```
+
 2. We iterate the process table as shown ealier and first calculate dynamic priority and calculate ties to find process to run:
 
 ```c
@@ -173,6 +186,15 @@ int queue_iterator[5];
 int max_ticks_in_queue[5] = {1, 2, 4, 8, 16};
 ```
 
+```struct proc``` is modified as follows:
+
+```c
+  int queue;                  // Current queue of the process
+  int ticks_in_current_slice; // Ticks in current time slice
+  int ticks[5];               // Number of ticks received at each of the five queues
+  int last_executed;          // Last execution time
+```
+
 2. The above variables are by default initialised to 0, unless specified otherwise. When a process is created in ```allocproc()```, we initialise accordingly (we add process to Queue0 - highest priority):
 
 ```c
@@ -201,7 +223,6 @@ for (p = proc; p < &proc[NPROC]; p++){
   {
     if (p->queue != 4)
     {
-      //demote priority
       p->queue++;
       p->ticks_in_current_slice = 0;
     }
@@ -219,7 +240,6 @@ for (p = proc; p < &proc[NPROC]; p++){
     release(&p->lock);
     continue;
   }
-  // if waiting too long
   if(ticks - p->last_executed > 1000)
   {
     if(p->queue!=0)
@@ -268,6 +288,59 @@ run_proc:
 ```
 
 ## Specification 3: Procdump
+
+Printing information about processes, specifically for PBS and MLFQ:
+
+Here, ```wtime``` is calculated using ```etime```, ```ctime``` and ```rtime```: ```w_time = p->etime - p->ctime - p->rtime;```
+
+```c
+
+ #ifdef MLFQ
+    printf("PID\tPriority\tState\t\tr_time\tw_time\tn_run\tq0\tq1\tq2\tq3\tq4\n");
+    for(p = proc; p < &proc[NPROC]; p++){
+      if(p->state == UNUSED)
+        continue;
+      if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+        state = states[p->state];
+      else
+        state = "???";
+      int w_time = p->etime - p->ctime - p->rtime;
+      if(w_time < 0)
+        w_time = 0;
+      printf("%d\t%d\t\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", p->pid, p->priority, state, p->rtime, w_time, p->nrun, p->ticks[0], p->ticks[1], p->ticks[2], p->ticks[3], p->ticks[4]);
+      printf("\n");
+    }
+  #else
+    #ifdef PBS
+    printf("PID\tPriority\tState\t\tr_time\tw_time\tn_run\n");
+    for(p = proc; p < &proc[NPROC]; p++){
+      if(p->state == UNUSED)
+        continue;
+      if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+        state = states[p->state];
+      else
+        state = "???";
+      int w_time = p->etime - p->ctime - p->rtime;
+      if(w_time < 0)
+        w_time = 0;
+      printf("%d\t%d\t\t%s\t%d\t%d\t%d\n", p->pid, p->priority, state, p->rtime, w_time, p->nrun);
+      printf("\n");
+    }
+    #else
+    for(p = proc; p < &proc[NPROC]; p++){
+      if(p->state == UNUSED)
+        continue;
+      if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+        state = states[p->state];
+      else
+        state = "???";
+      printf("%d %s %s", p->pid, state, p->name);
+      printf("\n");
+    }
+    #endif
+  #endif
+
+```
 
 -------------------------------------------------------------------------
 
