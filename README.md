@@ -451,6 +451,10 @@ Here, ```wtime``` is calculated using ```etime```, ```ctime``` and ```rtime```: 
 
 ```
 
+QUESTION: If a process voluntarily relinquishes control of the CPU(eg. For doing I/O), it leaves the queuing network, and when the process becomes ready again after the I/O, it is​ ​inserted at the tail of the same queue, from which it is relinquished earlier​ ​( Q: Explain in the README how could this be exploited by a process.
+
+ANSWER: When a process is I/O bound, MLFQ assumes that it is also likely to be I/O bound in the future. To exploit this behavior, the scheduler can favor jobs that have used the least amount of CPU time, thus prioritising other jobs that have continuously being higher in the priority queues.
+
 -------------------------------------------------------------------------
 
 ORIGINAL README:
