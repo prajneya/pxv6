@@ -12,6 +12,107 @@ This is a modification of the xv6 riscv operating system in which the following 
 
 ## Specification 1: strace
 
+A system call, trace, and an accompanying user program strace.
+
+Usage ```strace mask command [args]```
+
+1. We first add a ```sys_trace()``` function in ```systproc.c```:
+
+```c
+uint64
+sys_trace(void){
+  if (argint(0, &myproc()->tracemask) < 0)
+    return -1;
+
+  return 0;
+}
+```
+
+where we add 
+
+```c
+int tracemask;               // trace mask
+```
+
+in ```struct proc```
+
+2. We modify ```proc.c``` where we copy the tracemask to children while forking:
+
+```c
+// copy trace mask
+  np->tracemask = p->tracemask;
+```
+
+3. We add new system call in respective header files (```syscall.h```) and modify ```syscall.c``` as:
+
+```c
+
+// trace  //
+  if (p->tracemask >> num) {
+    printf("%d: syscall %s (", p->pid, syscall_names[num]);
+    int syscall_arg;
+
+    for(int syscall_iterator = 0; syscall_iterator<syscall_argc[num]; syscall_iterator++)
+    {
+      argint(syscall_iterator, &syscall_arg);
+      printf("%d ", syscall_arg);
+    }
+
+    printf(") -> %d\n", p->trapframe->a0);
+  }
+
+```
+with respective declarations of functions and following new arrays:
+
+```c
+static char *syscall_names[25] = {
+  "none",  "fork",  "exit",   "wait",   "pipe",  "read",  "kill",   "exec",
+  "fstat", "chdir", "dup",    "getpid", "sbrk",  "sleep", "uptime", "open",
+  "write", "mknod", "unlink", "link",   "mkdir", "close", "trace", "waitx",
+  "set_priority"
+};
+
+static int syscall_argc[25] = {
+  0, 0, 1, 1, 1, 3, 1, 2, 
+  2, 1, 1, 0, 1, 1, 0, 2,
+  3, 3, 1, 2, 1, 1, 0, 0, 
+  0
+};
+```
+
+4. We finally expose the kernel to the user to allow the usage of ```sys_trace()``` by a userprogram ```strace()``` by defining the function in ```user.h`` and create a ```strace.c``` and modify the makefile.
+
+Contents of ```strace.c```:
+
+```c
+#include "kernel/types.h"
+#include "kernel/stat.h"
+#include "user/user.h"
+#include "kernel/param.h"
+
+int
+main(int argc, char *argv[]){
+  int i;
+  char *nargv[MAXARG];
+
+  if(argc < 3 || (argv[1][0] < '0' || argv[1][0] > '9')){
+    printf("WRONG FORMAT\n");
+    exit(1);
+  }
+
+  if (trace(atoi(argv[1])) < 0) {
+    printf("TRACE FAILED\n");
+    exit(1);
+  }
+  
+  for(i = 2; i < argc && i < MAXARG; i++){
+    nargv[i-2] = argv[i];
+  }
+  exec(nargv[0], nargv);
+  exit(0);
+}
+```
+
 ## Specification 2: Schedulers
 
 ### FCFS Scheduler

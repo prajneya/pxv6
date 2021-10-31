@@ -142,6 +142,13 @@ static char *syscall_names[25] = {
   "set_priority"
 };
 
+static int syscall_argc[25] = {
+  0, 0, 1, 1, 1, 3, 1, 2, 
+  2, 1, 1, 0, 1, 1, 0, 2,
+  3, 3, 1, 2, 1, 1, 0, 0, 
+  0
+};
+
 void
 syscall(void)
 {
@@ -159,7 +166,17 @@ syscall(void)
 
   // trace  //
   if (p->tracemask >> num) {
-    printf("%d: syscall %s -> %d\n", 
-        p->pid, syscall_names[num], p->trapframe->a0);
+    printf("%d: syscall %s (", p->pid, syscall_names[num]);
+    int syscall_arg;
+
+    for(int syscall_iterator = 0; syscall_iterator<syscall_argc[num]; syscall_iterator++)
+    {
+      argint(syscall_iterator, &syscall_arg);
+      printf("%d ", syscall_arg);
+    }
+
+    printf(") -> %d\n", p->trapframe->a0);
   }
+
+  
 }
